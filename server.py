@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import subprocess
 from environment import ComplianceEnv
 from models import Action, ExecuteSQL, ReadFile, WriteFile, SubmitTask
@@ -22,16 +22,17 @@ def health_check():
     return {"status": "ok"}
 
 @app.post("/reset")
-def reset_environment(req: ResetRequest):
-    """Resets the environment for a specific task level."""
-    obs = env.reset(req.task_level)
+def reset_environment(req: Optional[ResetRequest] = None):
+    """Resets the environment. Handles empty requests from the auto-grader."""
+    # If the grader sends an empty request, default to "easy"
+    level = req.task_level if req else "easy"
+    obs = env.reset(level)
     return {"observation": obs.model_dump()}
 
 @app.post("/step")
 def step_environment(req: StepRequest):
     """Executes an action in the environment."""
     try:
-        # Reconstruct the Pydantic Action object based on the type
         if req.action_type == "ExecuteSQL":
             action = ExecuteSQL(**req.action_data)
         elif req.action_type == "ReadFile":
@@ -69,16 +70,15 @@ def get_tasks():
 @app.post("/grader")
 def get_grader_score():
     """Returns the current grader score."""
-    # We call our internal grader logic without submitting
     score = env._grade_task()
     return {"score": score}
 
 @app.get("/baseline")
 def run_baseline_endpoint():
-    """Triggers the baseline script and returns the scores."""
+    """Triggers the inference script and returns the scores."""
     try:
-        # Run the baseline.py script as a separate process
-        result = subprocess.run(["python", "baseline.py"], capture_output=True, text=True, check=True)
+        # Updated to call inference.py instead of baseline.py
+        result = subprocess.run(["python", "inference.py"], capture_output=True, text=True, check=True)
         return {"status": "success", "logs": result.stdout}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Baseline failed: {e.stderr}")
